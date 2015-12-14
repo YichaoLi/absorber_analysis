@@ -1,0 +1,78 @@
+# Pipeline file for parkes data.
+
+import os
+
+#from core import dir_data
+import scipy as sp
+
+#base_dir = os.getenv('YICHAO_WORK_GBT')
+#data_dir = os.getenv('GBT_DATA')
+base_dir = '/project/ycli/data/gbt/map_making/'
+data_dir = '/home/ycli/data/gbt/raw/origin/'
+
+''' >> Data Direction << '''
+file_middles = []
+#listfile = os.listdir(data_dir + "/GBT10B_036/")
+listfile = os.listdir(data_dir + "/GBT14B_339//")
+listfile.sort(key=lambda x:int(x.split('_')[0]))
+for file in listfile:
+    if file.split('.')[-1] == 'fits' and  file.split('_')[1] == 'wigglez1hr':
+        #print "/GBT10B_036/" + file
+        print "/GBT14B_339//" + file
+        file_middles.append("GBT14B_339/" + file.replace('.fits', ''))
+file_middles = tuple(file_middles)
+n_files = len(file_middles)
+
+prefix = ''
+
+# Maximum number of processes to use.
+pipe_processes = 8
+
+####  List of modules to execute.  ####
+pipe_modules = []
+
+#from time_stream import flag_data
+#pipe_modules.append(flag_data.FlagData)
+
+fd_input_root = data_dir
+fd_file_middles = file_middles
+fd_input_end = '.fits'
+fd_output_root = base_dir + 'flagged/' + prefix
+fd_output_end = '.fits'
+fd_scans = ()
+fd_IFs = ()
+fd_sigma_thres = 3.5
+# No Hanning.  Guppi's filters take care of it.
+fd_perform_hanning = False
+fd_rotate = True
+#fd_rotate = False
+fd_cal_scale = True
+fd_cal_phase = True
+#fd_cal_scale = False
+fd_badness_thres = 0.1
+fd_time_cut = 10
+
+from absorber_analysis.src import svd
+pipe_modules.append(svd.SVD_ForegroundClean)
+
+# flag_data, RFI flagger.
+#svd_input_root = data_dir
+#svd_input_root = base_dir + 'cal_rm/' + prefix
+svd_input_root = fd_output_root
+svd_file_middles = file_middles
+svd_input_end = '.fits'
+svd_output_end = '.fits'
+svd_scans = ()
+svd_IFs = ()
+svd_modes = 5
+svd_output_root = base_dir + 'svd_%02d/'%svd_modes + prefix
+#svd_rotate = True
+#svd_cal_scale = True
+#svd_cal_phase = True
+#svd_cal_rm = True
+svd_rotate = False
+svd_cal_scale = False
+svd_cal_phase = False
+svd_cal_rm = False
+svd_save_svd = True
+
