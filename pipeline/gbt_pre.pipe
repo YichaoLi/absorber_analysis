@@ -31,8 +31,8 @@ pipe_processes = 8
 ####  List of modules to execute.  ####
 pipe_modules = []
 
-#from time_stream import flag_data
-#pipe_modules.append(flag_data.FlagData)
+from time_stream import flag_data
+pipe_modules.append(flag_data.FlagData)
 
 fd_input_root = data_dir
 fd_file_middles = file_middles
@@ -52,8 +52,8 @@ fd_cal_phase = True
 fd_badness_thres = 0.1
 fd_time_cut = 10
 
-from absorber_analysis.src import svd
-pipe_modules.append(svd.SVD_ForegroundClean)
+#from absorber_analysis.src import svd
+#pipe_modules.append(svd.SVD_ForegroundClean)
 
 # flag_data, RFI flagger.
 #svd_input_root = data_dir
