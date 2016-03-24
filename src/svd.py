@@ -13,7 +13,7 @@ import h5py
 from numpy import linalg
 
 from kiyopy import parse_ini, utils
-import core.fitsGBT
+import core.fitsGBT as fitsGBT
 import kiyopy.custom_exceptions as ce
 from time_stream import base_single
 from time_stream import cal_scale
@@ -390,6 +390,90 @@ def svd_clean(data):
 
     return svd_result
 
+def check_map_fits(fits_filename):
+
+    data_block = [fitsGBT.Reader(fits_filename).read(),]
+
+    name = fits_filename.split('/')[-2] + ' ' + \
+            fits_filename.split('/')[-1].split('.')[0]
+
+    for Data in data_block:
+
+        Data.calc_time()
+        time = Data.time
+
+        time0 = time.min()
+        time -= time0
+
+        freq = (np.arange(Data.data.shape[-1]) - Data.field['CRPIX1'] + 1 )
+        freq *= Data.field['CDELT1']
+        freq += Data.field['CRVAL1']
+
+        map_left = Data.data[:,0,0,:]
+        map_right = Data.data[:,0,1,:]
+
+        fig = plt.figure(figsize=(10, 5))
+        ax1 = fig.add_axes([0.1, 0.52, 0.80, 0.38])
+        ax2 = fig.add_axes([0.1, 0.10, 0.80, 0.38])
+        cax1 = fig.add_axes([0.91, 0.52, 0.01, 0.38])
+        cax2 = fig.add_axes([0.91, 0.10, 0.01, 0.38])
+
+        map_left = np.ma.array(map_left)
+        map_left[np.logical_not(np.isfinite(map_left))] = np.ma.masked
+
+        Y, X = np.meshgrid(freq, time)
+
+        map_right = np.ma.array(map_right)
+        map_right[np.logical_not(np.isfinite(map_right))] = np.ma.masked
+
+        sigma = np.ma.std(map_left)
+        mean = np.ma.mean(map_left)
+        vmax = mean + sigma
+        vmin = mean - sigma
+        im1 = ax1.pcolormesh(X, Y, map_left, vmax=vmax, vmin=vmin)
+
+        sigma = np.ma.std(map_right)
+        mean = np.ma.mean(map_right)
+        vmax = mean + sigma
+        vmin = mean - sigma
+        im2 = ax2.pcolormesh(X, Y, map_right, vmax=vmax, vmin=vmin)
+
+        fig.colorbar(im1, ax=ax1, cax=cax1)
+        fig.colorbar(im2, ax=ax2, cax=cax2)
+
+        ax1.set_title(name)
+        ax1.set_xlim(xmin=time.min(), xmax=time.max())
+        ax1.set_ylim(ymin=freq.min(), ymax=freq.max())
+        ax1.minorticks_on()
+        ax1.tick_params(length=4, width=1, direction='out')
+        ax1.tick_params(which='minor', length=2, width=1, direction='out')
+        #ax1.set_xlabel('[time]')
+        ax1.set_ylabel('Frequency [MHz]\nCal on', 
+                horizontalalignment='right', 
+                verticalalignment='center',
+                multialignment='center')
+        ax1.set_xticklabels([])
+
+        ax2.set_xlim(xmin=time.min(), xmax=time.max())
+        ax2.set_ylim(ymin=freq.min(), ymax=freq.max())
+        ax2.minorticks_on()
+        ax2.tick_params(length=4, width=1, direction='out')
+        ax2.tick_params(which='minor', length=2, width=1, direction='out')
+        ax2.set_xlabel('Time + %f [s]'%time0)
+        ax2.set_ylabel('Frequency [MHz]\nCal off',
+                horizontalalignment='right', 
+                verticalalignment='center',
+                multialignment='center')
+
+        cax1.minorticks_on()
+        cax1.tick_params(length=4, width=1, direction='out')
+        cax1.tick_params(which='minor', length=2, width=1, direction='out')
+
+        cax2.minorticks_on()
+        cax2.tick_params(length=4, width=1, direction='out')
+        cax2.tick_params(which='minor', length=2, width=1, direction='out')
+
+        plt.show()
 
 def check_map(svd_filename):
 
@@ -588,13 +672,19 @@ if __name__=="__main__":
     #svd_file.close()
 
     #output_path = '/home/ycli/data/gbt/map_making/svd/GBT14B_339/'
-    output_path = '/project/ycli/data/gbt/map_making/svd_05/GBT14B_339/'
+    #output_path = '/project/ycli/data/gbt/map_making/svd_05/GBT14B_339/'
+    output_path = '/project/ycli/data/gbt/map_making/flagged/GBT14B_339/'
     data_name = '78_wigglez1hr_centre_ralongmap_80'
 
-    check_svd(output_path + data_name + '_svd_XX.hdf5')
-    check_svd(output_path + data_name + '_svd_YY.hdf5')
-    check_map(output_path + data_name + '_svd_XX.hdf5')
-    check_map(output_path + data_name + '_svd_YY.hdf5')
+    #output_path = '/project/ycli/data/gbt/map_making/svd_05/GBT13B_352/'
+    #output_path = '/project/ycli/data/gbt/map_making/flagged/GBT13B_352/'
+    #data_name = '01_wigglez1hr_centre_ralongmap_37'
+
+    #check_svd(output_path + data_name + '_svd_XX.hdf5')
+    #check_svd(output_path + data_name + '_svd_YY.hdf5')
+    #check_map(output_path + data_name + '_svd_XX.hdf5')
+    #check_map(output_path + data_name + '_svd_YY.hdf5')
+    check_map_fits(output_path + data_name + '.fits')
 
     #output_path = '/project/ycli/data/gbt/map_making/cal_rm/GBT14B_339/'
     #data_name = '78_wigglez1hr_centre_ralongmap_80_data.npy'

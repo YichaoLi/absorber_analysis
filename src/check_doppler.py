@@ -40,6 +40,13 @@ for data_fits in data_list:
         spec_cdelt = block.field['CDELT1']
         spec_shape = data.shape[-1]
 
+        print block.field['CAL']
+
+        block.calc_time()
+        print block.time
+
+        exit()
+
         print spec_crval 
         print spec_crpix
         print spec_cdelt

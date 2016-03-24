@@ -7,6 +7,34 @@ import pyfits
 import h5py
 import matplotlib.pyplot as plt
 
+from core import fitsGBT
+
+def check_scan(data_path):
+
+    data_block = fitsGBT.Reader(data_path).read()
+
+    fig = plt.figure(figsize=(5,5))
+    ax = fig.add_axes([0.12, 0.12, 0.8, 0.8])
+
+    for block in data_block:
+
+        data = block.data
+        print block.history
+
+        ra  = block.field['CRVAL2']
+        dec = block.field['CRVAL3']
+
+        print ra.shape
+
+        print ra
+        print dec
+
+        print ra.shape
+
+        ax.plot(ra, dec)
+
+    plt.show()
+
 def check_fits(data_path):
 
     hdulist = pyfits.open(data_path, memmap=False)
@@ -258,8 +286,12 @@ def check_data(data_path, data_name):
 
 if __name__=="__main__":
 
-    check_fits('/home/ycli/data/gbt/raw/origin/GBT14B_339/78_wigglez1hr_centre_ralongmap_80.fits')
+    #check_fits('/home/ycli/data/gbt/raw/origin/GBT14B_339/78_wigglez1hr_centre_ralongmap_80.fits')
 
+    #check_scan('/home/ycli/data/gbt/raw/origin/GBT14B_339/78_wigglez1hr_centre_ralongmap_80.fits')
+    #check_scan('/home/ycli/data/gbt/raw/origin/GBT10B_036/89_wigglez1hr_centre_ralongmap_102-111.fits')
+    #check_scan('/home/ycli/data/gbt/map_making/split_scans/GBT13B_352/01_wigglez1hr_centre_ralongmap_36.fits')
+    check_fits('/home/ycli/data/gbt/map_making/split_scans/GBT13B_352/01_wigglez1hr_centre_ralongmap_36.fits')
     exit()
 
 
