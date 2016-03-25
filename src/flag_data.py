@@ -10,12 +10,15 @@ import numpy.ma as ma
 import scipy as sp
 import scipy.signal as sig
 
+from time_stream import base_single
 import core.fitsGBT
 import kiyopy.custom_exceptions as ce
-import base_single
-import hanning
-import cal_scale
+from kiyopy import utils
+from time_stream import hanning
+from time_stream import cal_scale
 from time_stream import rotate_pol
+
+from mpi4py import MPI
 
 # XXX
 #import matplotlib.pyplot as plt
@@ -41,10 +44,41 @@ class FlagData(base_single.BaseSingle) :
                    # (as a fraction) will be considered bad.
                    'badness_thres' : 0.1,
                    # How many times to hide around a bad time.
-                   'time_cut' : 40
+                   'time_cut' : 40,
+                   'submean' : True,
                    }
     feedback_title = 'New flags each data Block: '
     
+    def mpiexecute(self, n_processes=1):
+        """
+        Process all data with MPI
+        To start with MPI, you need to change manager.py 
+        calling mpiexecute instead of execute. 
+        and do,
+
+        $ mpirun -np 9 --bynode  python  manager.py pipeline.pipe
+
+        """
+
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+
+        params = self.params
+        if rank == 0:
+            output_fname = (params['output_root']
+                    + params['file_middles'][0] + params['output_end'])
+            utils.mkparents(output_fname)
+
+        comm.barrier()
+
+        n_files = len(params['file_middles'])
+        for file_ind in range(n_files)[rank::size]:
+
+            self.process_file(file_ind)
+
+        comm.barrier()
+
     def action(self, Data):
         '''Prepares Data and flags RFI.
         
@@ -79,7 +113,8 @@ class FlagData(base_single.BaseSingle) :
         # Flag the data.
         apply_cuts(Data, sigma_thres=params['sigma_thres'], 
                     badness_thres=params['badness_thres'],
-                    time_cut=params['time_cut'])
+                    time_cut=params['time_cut'], 
+                    submean=params['submean'])
         Data.add_history('Flagged Bad Data.', ('Sigma threshold: '
                     + str(self.params['sigma_thres']), 'Badness threshold: '
                     + str(self.params['badness_thres']), 'Time mask size: '
@@ -90,17 +125,17 @@ class FlagData(base_single.BaseSingle) :
         self.block_feedback = '%d (%f%%), ' % (new_flags, percent)
         return Data
 
-def apply_cuts(Data, sigma_thres=6, badness_thres=0.1, time_cut=40):
+def apply_cuts(Data, sigma_thres=6, badness_thres=0.1, time_cut=40, submean=True):
     '''Flags bad data from RFI and far outliers.
 
     See `flag_data()` for parameter explanations and more info.
     '''
-    badness = flag_data(Data, sigma_thres, badness_thres, time_cut)
+    badness = flag_data(Data, sigma_thres, badness_thres, time_cut, submean=submean)
     # Can print or return badness here if you would like
     # to see if the Data had a problem in time or not.
     return
 
-def flag_data(Data, sigma_thres, badness_thres, time_cut):
+def flag_data(Data, sigma_thres, badness_thres, time_cut, submean=True):
     '''Flag bad data from RFI and far outliers.
 
     Parameters
@@ -158,7 +193,8 @@ def flag_data(Data, sigma_thres, badness_thres, time_cut):
     bad_freqs = []
     amount_masked = -1 # For recursion
     while not (amount_masked == 0) and itr < max_itr:
-        amount_masked = destroy_with_variance(Data1, sigma_thres, bad_freqs) 
+        amount_masked = \
+                destroy_with_variance(Data1, sigma_thres, bad_freqs, submean) 
         itr += 1
     bad_freqs.sort()
     # Remember the flagged data.
@@ -178,7 +214,8 @@ def flag_data(Data, sigma_thres, badness_thres, time_cut):
         bad_freqs = []
         amount_masked = -1
         while not (amount_masked == 0) and itr < max_itr:
-            amount_masked = destroy_with_variance(Data2, sigma_thres, bad_freqs) 
+            amount_masked = \
+                    destroy_with_variance(Data2, sigma_thres, bad_freqs, submean) 
             itr += 1
         bad_freqs.sort()
         percent_masked2 = (float(len(bad_freqs)) / Data2.dims[-1])
@@ -190,7 +227,8 @@ def flag_data(Data, sigma_thres, badness_thres, time_cut):
         if not badness:
             itr = 0
             while not (amount_masked == 0) and itr < max_itr:
-                amount_masked = destroy_with_variance(Data2, sigma_thres, bad_freqs) 
+                amount_masked = \
+                        destroy_with_variance(Data2, sigma_thres, bad_freqs, submean) 
                 itr += 1
             Data1 = Data2
     # We've flagged the RFI down to the foreground limit.  Filter out the
@@ -200,14 +238,14 @@ def flag_data(Data, sigma_thres, badness_thres, time_cut):
     filter_foregrounds(Data1, n_bands=40, time_bins_smooth=10)
     itr = 0 
     while not (amount_masked == 0) and itr < max_itr:
-        amount_masked = destroy_with_variance(Data1, sigma_thres, bad_freqs) 
+        amount_masked = destroy_with_variance(Data1, sigma_thres, bad_freqs, submean) 
         itr += 1
     mask = Data1.data.mask
     # Finally copy the mask to origional data block.
     Data.data.mask = mask
     return badness
 
-def destroy_with_variance_4pol(Data, sigma_thres=6, bad_freq_list=[]):
+def destroy_with_variance_4pol(Data, sigma_thres=6, bad_freq_list=[], submean=True):
     '''Mask frequencies with high variance.
 
     Since the signal we are looking for is much weaker than what is in `Data`,
@@ -237,18 +275,26 @@ def destroy_with_variance_4pol(Data, sigma_thres=6, bad_freq_list=[]):
     Polarizations must be in XX,XY,YX,YY format.
 
     '''
-    XX_YY_0 = ma.mean(Data.data[:, 0, 0, :], 0) * ma.mean(Data.data[:, 3, 0, :], 0)
-    XX_YY_1 = ma.mean(Data.data[:, 0, 1, :], 0) * ma.mean(Data.data[:, 3, 1, :], 0)
+    if submean:
+        XX_XX_0 = ma.mean(Data.data[:, 0, 0, :], 0)
+        YY_YY_0 = ma.mean(Data.data[:, 3, 0, :], 0)
+        XX_XX_1 = ma.mean(Data.data[:, 0, 1, :], 0)
+        YY_YY_1 = ma.mean(Data.data[:, 3, 1, :], 0)
+    else:
+        XX_XX_0 = 1.
+        YY_YY_0 = 1.
+        XX_XX_1 = 1.
+        YY_YY_1 = 1.
     # Get the normalized variance array for each polarization.
-    a = ma.var(Data.data[:, 0, 0, :], 0) / (ma.mean(Data.data[:, 0, 0, :], 0)**2) # XX
-    b = ma.var(Data.data[:, 1, 0, :], 0) / XX_YY_0                                # XY
-    c = ma.var(Data.data[:, 2, 0, :], 0) / XX_YY_0                                # YX
-    d = ma.var(Data.data[:, 3, 0, :], 0) / (ma.mean(Data.data[:, 3, 0, :], 0)**2) # YY
+    a = ma.var(Data.data[:, 0, 0, :], 0) / XX_XX_0 * XX_XX_0 # XX
+    b = ma.var(Data.data[:, 1, 0, :], 0) / XX_XX_0 * YY_YY_0 # XY
+    c = ma.var(Data.data[:, 2, 0, :], 0) / YY_YY_0 * XX_XX_0 # YX
+    d = ma.var(Data.data[:, 3, 0, :], 0) / YY_YY_0 * YY_YY_0 # YY
     # And for cal off.
-    e = ma.var(Data.data[:, 0, 1, :], 0) / (ma.mean(Data.data[:, 0, 1, :], 0)**2) # XX
-    f = ma.var(Data.data[:, 1, 1, :], 0) / XX_YY_1                                # XY
-    g = ma.var(Data.data[:, 2, 1, :], 0) / XX_YY_1                                # YX
-    h = ma.var(Data.data[:, 3, 1, :], 0) / (ma.mean(Data.data[:, 3, 1, :], 0)**2) # YY
+    e = ma.var(Data.data[:, 0, 1, :], 0) / XX_XX_1 * XX_XX_1 # XX
+    f = ma.var(Data.data[:, 1, 1, :], 0) / XX_XX_1 * YY_YY_1 # XY
+    g = ma.var(Data.data[:, 2, 1, :], 0) / YY_YY_1 * XX_XX_1 # YX
+    h = ma.var(Data.data[:, 3, 1, :], 0) / YY_YY_1 * YY_YY_1 # YY
     # Get the mean and standard deviation [sigma].
     means = sp.array([ma.mean(a), ma.mean(b), ma.mean(c), ma.mean(d),
                         ma.mean(e), ma.mean(f), ma.mean(g), ma.mean(h)]) 
@@ -273,7 +319,7 @@ def destroy_with_variance_4pol(Data, sigma_thres=6, bad_freq_list=[]):
             Data.data[:,:,:,freq].mask = True
     return amount_masked
 
-def destroy_with_variance_2pol(Data, sigma_thres=6, bad_freq_list=[]):
+def destroy_with_variance_2pol(Data, sigma_thres=6, bad_freq_list=[], submean=True):
     '''Mask frequencies with high variance.
     This is the same as last function, but for Parkes 2 pol data.
 
@@ -283,8 +329,12 @@ def destroy_with_variance_2pol(Data, sigma_thres=6, bad_freq_list=[]):
     #Data.data[Data.data<3] = ma.masked
     Data.data[np.isnan(Data.data)] = ma.masked
     Data.data[Data.data <= 0.] = ma.masked
-    a = ma.var(Data.data[:,0,0,:],0)/(ma.mean(Data.data[:,0,0,:],0)**2)#XX
-    b = ma.var(Data.data[:,1,0,:],0)/(ma.mean(Data.data[:,1,0,:],0)**2)#YY
+    if submean:
+        a = ma.var(Data.data[:,0,0,:],0)/(ma.mean(Data.data[:,0,0,:],0)**2)#XX
+        b = ma.var(Data.data[:,1,0,:],0)/(ma.mean(Data.data[:,1,0,:],0)**2)#YY
+    else:
+        a = ma.var(Data.data[:,0,0,:],0)
+        b = ma.var(Data.data[:,1,0,:],0)
     # Get the mean and standard deviation [sigma].
     means = sp.array([ma.mean(a), ma.mean(b)]) 
     sig   = sp.array([ma.std(a), ma.std(b)])

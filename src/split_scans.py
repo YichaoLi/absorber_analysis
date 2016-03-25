@@ -36,6 +36,13 @@ class SplitScans(base_single.BaseSingle):
         size = comm.Get_size()
 
         params = self.params
+        if rank == 0:
+            output_fname = (params['output_root']
+                    + params['file_middles'][0] + params['output_end'])
+            utils.mkparents(output_fname)
+
+        comm.barrier()
+
         n_files = len(params['file_middles'])
         for file_ind in range(n_files)[rank::size]:
 
