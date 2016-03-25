@@ -300,10 +300,12 @@ def corr_svd(data, params, file_ind, freq=None, time=None):
     data[...,2066:2166] = np.inf
 
     freq_mask = np.any(np.isfinite(data), axis=(0, 2))
+    print data[freq_mask[None, :, None, :]].shape
+    time_mask = np.all(np.isfinite(data[...,freq_mask[0,:]]), axis=(2, 3))
     weights = np.ones(data.shape)
     data_mask = np.logical_not(np.isfinite(data))
     weights[data_mask] = 0.
-    data[data_mask] = 0.
+    #data[data_mask] = 0.
 
     # for XX
     if params['save_svd']:
@@ -311,6 +313,10 @@ def corr_svd(data, params, file_ind, freq=None, time=None):
         map2_raw = copy.deepcopy(data[:,0,1,:].T)
 
     print float(np.sum(weights[:,0,:,:])) / np.prod(weights[:,0,:,:].shape) * 100
+    print float(np.sum(weights[:,0,:,:][...,freq_mask[0,:]])) /\
+            np.prod(weights[:,0,:,:][...,freq_mask[0,:]].shape) * 100
+    print float(np.sum(weights[:,0,:,:][...,freq_mask[0,:]][time_mask[0,:],...])) /\
+            np.prod(weights[:,0,:,:][...,freq_mask[0,:]][time_mask[0,:],...].shape) * 100
 
     if params['save_plot']:
         f_name = params['output_root'] + \
@@ -427,7 +433,9 @@ def corr_svd(data, params, file_ind, freq=None, time=None):
     gc.collect()
 
 
-    data[data_mask] = np.inf
+    #data[data_mask] = np.inf
+    data = np.ma.array(data)
+    data[data_mask] = np.ma.masked
 
     return data
 
@@ -501,6 +509,67 @@ def svd_clean(data):
     svd_result = find_modes.get_freq_svd_modes(corr, corr.shape[0])
 
     return svd_result
+
+def check_spec_fits(fits_filename):
+
+    data_block = [fitsGBT.Reader(fits_filename).read(),]
+
+    name = fits_filename.split('/')[-2] + ' ' + \
+            fits_filename.split('/')[-1].split('.')[0]
+
+    for Data in data_block:
+
+        Data.calc_time()
+        time = Data.time
+
+        time0 = time.min()
+        time -= time0
+
+        freq = (np.arange(Data.data.shape[-1]) - Data.field['CRPIX1'] + 1 )
+        freq *= Data.field['CDELT1']
+        freq += Data.field['CRVAL1']
+
+        map_left = Data.data[:,0,0,:]
+        map_right = Data.data[:,0,1,:]
+
+        fig = plt.figure(figsize=(10, 5))
+        ax1 = fig.add_axes([0.1, 0.52, 0.80, 0.38])
+        ax2 = fig.add_axes([0.1, 0.10, 0.80, 0.38])
+
+        map_left = np.ma.array(map_left)
+        map_left[np.logical_not(np.isfinite(map_left))] = np.ma.masked
+
+        map_right = np.ma.array(map_right)
+        map_right[np.logical_not(np.isfinite(map_right))] = np.ma.masked
+
+        ax1.plot(freq, np.ma.mean(map_left, axis=0), 'k.-')
+        ax2.plot(freq, np.ma.mean(map_right, axis=0), 'k.-')
+
+        ax1.set_title(name)
+        ax1.set_xlim(xmin=freq.min(), xmax=freq.max())
+        #ax1.set_ylim(ymin=freq.min(), ymax=freq.max())
+        ax1.minorticks_on()
+        ax1.tick_params(length=4, width=1, direction='out')
+        ax1.tick_params(which='minor', length=2, width=1, direction='out')
+        #ax1.set_xlabel('Frequency [MHz]')
+        ax1.set_ylabel('Cal on', 
+                horizontalalignment='right', 
+                verticalalignment='center',
+                multialignment='center')
+        ax1.set_xticklabels([])
+
+        ax2.set_xlim(xmin=freq.min(), xmax=freq.max())
+        #ax2.set_ylim(ymin=freq.min(), ymax=freq.max())
+        ax2.minorticks_on()
+        ax2.tick_params(length=4, width=1, direction='out')
+        ax2.tick_params(which='minor', length=2, width=1, direction='out')
+        ax2.set_xlabel('Frequency [MHz]')
+        ax2.set_ylabel('Cal off',
+                horizontalalignment='right', 
+                verticalalignment='center',
+                multialignment='center')
+
+        plt.show()
 
 def check_map_fits(fits_filename):
 
@@ -794,18 +863,22 @@ if __name__=="__main__":
     #output_path = '/home/ycli/data/gbt/map_making/svd/GBT14B_339/'
     #output_path = '/project/ycli/data/gbt/map_making/svd_05/GBT14B_339/'
     #data_name = '78_wigglez1hr_centre_ralongmap_80'
-    output_path = '/home/p/pen/ycli/workspace/output/map_result_gbt_absorb/svd_03/GBT13B_352/'
-    data_name = '01_wigglez1hr_centre_ralongmap_36_03'
+    #output_path = '/home/p/pen/ycli/workspace/output/map_result_gbt_absorb/svd_03/GBT13B_352/'
+    #data_name = '01_wigglez1hr_centre_ralongmap_36_03'
 
     #output_path = '/project/ycli/data/gbt/map_making/svd_05/GBT13B_352/'
     #output_path = '/project/ycli/data/gbt/map_making/flagged/GBT13B_352/'
     #data_name = '01_wigglez1hr_centre_ralongmap_37'
 
+    output_path = '/project/ycli/data/gbt/map_making/svd_01/GBT10B_036/'
+    data_name = '87_wigglez1hr_centre_ralongmap_90-99_00'
+
     #check_svd(output_path + data_name + '_svd_XX.hdf5')
     #check_svd(output_path + data_name + '_svd_YY.hdf5')
     #check_map(output_path + data_name + '_svd_XX.hdf5')
     #check_map(output_path + data_name + '_svd_YY.hdf5')
-    check_map_fits(output_path + data_name + '.fits')
+    #check_map_fits(output_path + data_name + '.fits')
+    check_spec_fits(output_path + data_name + '.fits')
 
     #output_path = '/project/ycli/data/gbt/map_making/cal_rm/GBT14B_339/'
     #data_name = '78_wigglez1hr_centre_ralongmap_80_data.npy'
