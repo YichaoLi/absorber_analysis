@@ -235,11 +235,11 @@ def flag_data(Data, sigma_thres, badness_thres, time_cut, submean=True):
     # foregrounds and flag again to get below the foreground limit.
     # TODO, hard coded time_bins_smooth acctually depends on the scan speed and
     # the time sampling.
-    filter_foregrounds(Data1, n_bands=40, time_bins_smooth=10)
-    itr = 0 
-    while not (amount_masked == 0) and itr < max_itr:
-        amount_masked = destroy_with_variance(Data1, sigma_thres, bad_freqs, submean) 
-        itr += 1
+    #filter_foregrounds(Data1, n_bands=40, time_bins_smooth=10)
+    #itr = 0 
+    #while not (amount_masked == 0) and itr < max_itr:
+    #    amount_masked = destroy_with_variance(Data1, sigma_thres, bad_freqs, submean) 
+    #    itr += 1
     mask = Data1.data.mask
     # Finally copy the mask to origional data block.
     Data.data.mask = mask

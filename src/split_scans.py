@@ -46,6 +46,7 @@ class SplitScans(base_single.BaseSingle):
         n_files = len(params['file_middles'])
         for file_ind in range(n_files)[rank::size]:
 
+            print "RANK %02d: FILE%03d"%(rank, file_ind)
             self.process_file(file_ind)
 
         comm.barrier()

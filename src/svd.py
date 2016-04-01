@@ -108,7 +108,7 @@ class SVD_ForegroundClean(base_single.BaseSingle) :
             cal_xx = np.mean(Data.data[:, 0, 0, :] - Data.data[:, 0, 1, :], axis=0)
             cal_yy = np.mean(Data.data[:, 3, 0, :] - Data.data[:, 3, 1, :], axis=0)
             if np.median(cal_xx) > 0:
-                print np.median(cal_xx) 
+                #print np.median(cal_xx) 
                 Data.data[:, 0, 0, :] -= cal_xx[None, :]
                 Data.data[:, 3, 0, :] -= cal_yy[None, :]
                 Data.data[:, 1, 0, :] -= np.sqrt(cal_xx*cal_yy)[None, :]
@@ -143,7 +143,12 @@ def svd_spec_time(data, params, file_ind, freq=None, time=None):
     #data[...,1640:1740] = np.inf
     #data[...,2066:2166] = np.inf
 
-    freq_mask = np.any(np.isfinite(data), axis=(0, 2))
+    time_mask = np.logical_not(np.all(np.logical_not(np.isfinite(data)), axis=(2,3)))
+    freq_mask = np.all(np.isfinite(data[time_mask[..., None, None]]), axis=(0, 2))
+
+    data[freq_mask[None, :, None, :]] = np.ma.masked
+
+    #freq_mask = np.any(np.isfinite(data), axis=(0, 2))
     weights = np.ones(data.shape)
     data_mask = np.logical_not(np.isfinite(data))
     weights[data_mask] = 0.
@@ -297,47 +302,39 @@ def svd_spec_time(data, params, file_ind, freq=None, time=None):
 
 def corr_svd(data, params, file_ind, freq=None, time=None):
 
-    # get the svd mode
-    #Data.data = ma.array(Data.data)
-    #Data.data[np.logical_not(np.isfinite(Data.data))] = np.ma.masked
+    data[..., :100] = np.ma.masked
+    data[...,-100:] = np.ma.masked
+    data[...,1640:1740] = np.ma.masked
+    data[...,2066:2166] = np.ma.masked
 
-    data[..., :100] = np.inf
-    data[...,-100:] = np.inf
-    data[...,1640:1740] = np.inf
-    data[...,2066:2166] = np.inf
+    freq_mask = np.logical_not(np.any(np.all(data.mask, axis=0), axis=1))
 
-    freq_mask = np.any(np.isfinite(data), axis=(0, 2))
-    print data[freq_mask[None, :, None, :]].shape
-    time_mask = np.all(np.isfinite(data[...,freq_mask[0,:]]), axis=(2, 3))
-    weights = np.ones(data.shape)
-    data_mask = np.logical_not(np.isfinite(data))
-    weights[data_mask] = 0.
-    #data[data_mask] = 0.
+    weights = np.ma.ones(data.shape)
+    weights[data.mask] = np.ma.masked
+
+    # subtract mean of each frequency
+    #data_mean = np.sum(data, axis=0) / np.sum(weights, axis=0)
+    #data_mean[data_mean==0] = np.inf
+    #data /= data_mean[None, ...]
 
     # for XX
     if params['save_svd']:
         map1_raw = copy.deepcopy(data[:,0,0,:].T)
         map2_raw = copy.deepcopy(data[:,0,1,:].T)
 
-    print float(np.sum(weights[:,0,:,:])) / np.prod(weights[:,0,:,:].shape) * 100
-    print float(np.sum(weights[:,0,:,:][...,freq_mask[0,:]])) /\
-            np.prod(weights[:,0,:,:][...,freq_mask[0,:]].shape) * 100
-    print float(np.sum(weights[:,0,:,:][...,freq_mask[0,:]][time_mask[0,:],...])) /\
-            np.prod(weights[:,0,:,:][...,freq_mask[0,:]][time_mask[0,:],...].shape) * 100
-
     if params['save_plot']:
         f_name = params['output_root'] + \
                 params['file_middles'][file_ind] + '_raw_XX.hdf5'
         utils.mkparents(f_name)
-        check_map(f_name, np.ma.array(data[:,0,:,:]), time, freq)
+        check_map(f_name, data[:,0,:,:], time, freq)
         f_name = params['output_root'] + \
                 params['file_middles'][file_ind] + '_raw_YY.hdf5'
         utils.mkparents(f_name)
-        check_map(f_name, np.ma.array(data[:,3,:,:]), time, freq)
+        check_map(f_name, data[:,3,:,:], time, freq)
 
 
     corr, weight = find_modes.freq_covariance(
-            data[:,0,0,:].T,    data[:,0,1,:].T, 
+            data[:,0,0,:].T, data[:,0,1,:].T, 
             weights[:,0,0,:].T, weights[:,0,1,:].T, 
             freq_mask[0,:], freq_mask[0, :], no_weight=False)
 
@@ -380,6 +377,9 @@ def corr_svd(data, params, file_ind, freq=None, time=None):
         utils.mkparents(f_name)
         check_svd(f_name, svd_result, freq_mask[0,:], freq)
         check_map(f_name, np.ma.array(data[:,0,:,:]), time, freq)
+        f_name = params['output_root'] + \
+                params['file_middles'][file_ind] + '_corr_XX.hdf5'
+        check_corr(f_name, corr, weight)
 
     del corr, weight, svd_result, map1, map2, outmap_left, outmap_right 
     gc.collect()
@@ -389,12 +389,10 @@ def corr_svd(data, params, file_ind, freq=None, time=None):
         map1_raw = copy.deepcopy(data[:,3,0,:].T)
         map2_raw = copy.deepcopy(data[:,3,1,:].T)
 
-    print float(np.sum(weights[:,3,:,:])) / np.prod(weights[:,3,:,:].shape) * 100
-
     corr, weight = find_modes.freq_covariance(
             data[:,3,0,:].T, data[:,3,1,:].T, 
             weights[:,3,0,:].T, weights[:,3,1,:].T, 
-            freq_mask[3,:], freq_mask[3, :], no_weight=False)
+            freq_mask[3,:], freq_mask[3,:], no_weight=False)
 
     svd_result = find_modes.get_freq_svd_modes(corr, corr.shape[0])
 
@@ -435,14 +433,17 @@ def corr_svd(data, params, file_ind, freq=None, time=None):
         utils.mkparents(f_name)
         check_svd(f_name, svd_result, freq_mask[3,:], freq)
         check_map(f_name, np.ma.array(data[:,3,:,:]), time, freq)
+        f_name = params['output_root'] + \
+                params['file_middles'][file_ind] + '_corr_XX.hdf5'
+        check_corr(f_name, corr, weight)
 
     del corr, weight, svd_result, map1, map2, outmap_left, outmap_right
     gc.collect()
 
 
     #data[data_mask] = np.inf
-    data = np.ma.array(data)
-    data[data_mask] = np.ma.masked
+    #data = np.ma.array(data)
+    #data[data_mask] = np.ma.masked
 
     return data
 
@@ -477,10 +478,16 @@ def subtract_frequency_modes(map1, map2, weight1, weight2, freq_mask,
     for mode_index, mode_vector in enumerate(modes1):
         #mode_vector = mode_vector.reshape(freq_mask.shape)
 
-        amp = sp.tensordot(mode_vector, 
-                map1[freq_mask, :] * weight1[freq_mask, :], axes=(0,0))
-        amp /= sp.tensordot(mode_vector, 
-                mode_vector[:, None] * weight1[freq_mask, :], axes=(0,0))
+        #amp = sp.tensordot(mode_vector, 
+        #        map1[freq_mask, :] * weight1[freq_mask, :], axes=(0,0))
+        #normal = sp.tensordot(mode_vector, 
+        #        mode_vector[:, None] * weight1[freq_mask, :], axes=(0,0))
+        amp    = np.ma.sum(mode_vector[:, None] * \
+                (map1[freq_mask, :]   * weight1[freq_mask, :]), axis=0)
+        normal = np.ma.sum(mode_vector[:, None] * \
+                (mode_vector[:, None] * weight1[freq_mask, :]), axis=0)
+        normal[normal==0] = np.inf
+        amp /= normal
 
         fitted = mode_vector[:, None] * amp[None, :]
         map1[freq_mask, :] -= fitted
@@ -493,10 +500,17 @@ def subtract_frequency_modes(map1, map2, weight1, weight2, freq_mask,
     for mode_index, mode_vector in enumerate(modes2):
         #mode_vector = mode_vector.reshape(freq_mask.shape)
 
-        amp = sp.tensordot(mode_vector, 
-                map2[freq_mask, :] * weight2[freq_mask, :], axes=(0,0))
-        amp /= sp.tensordot(mode_vector, 
-                mode_vector[:, None] * weight2[freq_mask, :], axes=(0,0))
+        #amp = sp.tensordot(mode_vector, 
+        #        map2[freq_mask, :] * weight2[freq_mask, :], axes=(0,0))
+        #normal = sp.tensordot(mode_vector, 
+        #        mode_vector[:, None] * weight2[freq_mask, :], axes=(0,0))
+        amp    = np.ma.sum(mode_vector[:, None] * \
+                (map2[freq_mask, :]   * weight2[freq_mask, :]), axis=0)
+        normal = np.ma.sum(mode_vector[:, None] * \
+                (mode_vector[:, None] * weight2[freq_mask, :]), axis=0)
+        normal[normal==0] = np.inf
+        amp /= normal
+
         fitted = mode_vector[:, None] * amp[None, :]
         map2[freq_mask, :] -= fitted
 
@@ -663,6 +677,51 @@ def check_map_fits(fits_filename):
 
         plt.show()
 
+def check_corr(svd_filename, corr, weight):
+
+    name = svd_filename.split('/')[-2] + ' ' + \
+            svd_filename.split('/')[-1].split('.')[0]
+
+    fig = plt.figure(figsize=(5, 10))
+    ax1 = fig.add_axes([0.1, 0.52, 0.80, 0.38])
+    ax2 = fig.add_axes([0.1, 0.10, 0.80, 0.38])
+    cax1 = fig.add_axes([0.91, 0.52, 0.01, 0.38])
+    cax2 = fig.add_axes([0.91, 0.10, 0.01, 0.38])
+
+    im1 = ax1.pcolormesh(corr)
+    im2 = ax2.pcolormesh(weight)
+
+    fig.colorbar(im1, ax=ax1, cax=cax1)
+    fig.colorbar(im2, ax=ax2, cax=cax2)
+
+    ax1.set_title(name)
+    ax1.set_xlim(xmin=0, xmax=corr.shape[1])
+    ax1.set_ylim(ymin=0, ymax=corr.shape[0])
+    ax1.minorticks_on()
+    ax1.tick_params(length=4, width=1, direction='out')
+    ax1.tick_params(which='minor', length=2, width=1, direction='out')
+    #ax1.set_xlabel('[time]')
+    ax1.set_xticklabels([])
+
+    ax2.set_xlim(xmin=0, xmax=corr.shape[1])
+    ax2.set_ylim(ymin=0, ymax=corr.shape[0])
+    ax2.minorticks_on()
+    ax2.tick_params(length=4, width=1, direction='out')
+    ax2.tick_params(which='minor', length=2, width=1, direction='out')
+
+    cax1.minorticks_on()
+    cax1.tick_params(length=4, width=1, direction='out')
+    cax1.tick_params(which='minor', length=2, width=1, direction='out')
+
+    cax2.minorticks_on()
+    cax2.tick_params(length=4, width=1, direction='out')
+    cax2.tick_params(which='minor', length=2, width=1, direction='out')
+
+    #plt.show()
+    plt.savefig(svd_filename.replace('hdf5', 'png'), format='png')
+    plt.close()
+
+
 def check_map(svd_filename, map=None, time=None, freq=None):
 
     if map == None:
@@ -810,7 +869,7 @@ def check_svd(svd_filename, svd_result=None, freq_mask=None, freq=None):
         ax2 = fig2.add_axes([l, b + ( n_mode - i - 1 ) * h, W, h])
         #ax2.plot(freq[freq_mask], svd_result[1][i])
         ax2.plot(freq[freq_mask], svd_result[2][i])
-        ax2.set_ylim(ymax=0.07, ymin=-0.07)
+        #ax2.set_ylim(ymax=0.07, ymin=-0.07)
         ax2.set_xlim(xmin=freq.min(), xmax=freq.max())
         ax2.minorticks_on()
         ax2.tick_params(length=4, width=1.)
@@ -878,7 +937,8 @@ if __name__=="__main__":
     #data_name = '01_wigglez1hr_centre_ralongmap_37'
 
     output_path = '/project/ycli/data/gbt/map_making/svd_01/GBT10B_036/'
-    data_name = '87_wigglez1hr_centre_ralongmap_90-99_00'
+    #data_name = '87_wigglez1hr_centre_ralongmap_90-99_00'
+    data_name = '90_wigglez1hr_centre_ralongmap_27-36'
 
     #check_svd(output_path + data_name + '_svd_XX.hdf5')
     #check_svd(output_path + data_name + '_svd_YY.hdf5')

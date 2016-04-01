@@ -26,16 +26,23 @@ def freq_covariance(map1, map2, weight1, weight2, freq1, freq2, no_weight=False,
     wprod2 = map2_flat * weight2_flat
 
     # TODO: or should this be wprod2, wprod1^T?
-    quad_wprod = np.dot(wprod1, np.transpose(wprod2))
-    quad_weight = np.dot(weight1_flat, np.transpose(weight2_flat))
+    quad_wprod = np.ma.dot(wprod1, np.transpose(wprod2))
+    quad_weight = np.ma.dot(weight1_flat, np.transpose(weight2_flat))
 
     if normalize:
         # For check C_{AB}/(C_A*C_B)**0.5
-        quad_wprod1 = np.dot(wprod1, np.transpose(wprod1))
-        quad_wprod2 = np.dot(wprod2, np.transpose(wprod2))
+        quad_wprod1 = np.ma.dot(wprod1, np.transpose(wprod1))
+        quad_wprod2 = np.ma.dot(wprod2, np.transpose(wprod2))
         quad_wprod /= (quad_wprod1*quad_wprod2)**0.5
 
+    if not np.any(quad_wprod.mask):
+        print "No mask in covariance matrix"
+    else:
+        print "%f%% covariance matrix are masked"%(
+                float(np.ma.count_masked(quad_wprod))/quad_wprod.size % 100)
+
     mask = (quad_weight < 1e-20)
+
     quad_weight[mask] = 1.
     quad_wprod /= quad_weight
     quad_wprod[mask] = 0
@@ -43,7 +50,6 @@ def freq_covariance(map1, map2, weight1, weight2, freq1, freq2, no_weight=False,
 
     #return quad_wprod[..., np.newaxis], quad_weight[..., np.newaxis]
     return quad_wprod, quad_weight
-
 
 def get_freq_svd_modes(corr, n_modes):
     r"""Same as get freq eigenmodes, but treats left and right maps
