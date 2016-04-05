@@ -133,29 +133,29 @@ def check_map_fits(fits_filename):
 
         freq_mask = np.all(Data.data.mask, axis=0, keepdims=True)
 
-        ax1.plot(np.logical_not(freq_mask[0, 0, 0, :]).astype('float'), label='cal on')
-        ax1.plot(np.logical_not(freq_mask[0, 0, 1, :]).astype('float')+2, label='cal off')
+        #ax1.plot(np.logical_not(freq_mask[0, 0, 0, :]).astype('float'), label='cal on')
+        #ax1.plot(np.logical_not(freq_mask[0, 0, 1, :]).astype('float')+2, label='cal off')
 
-        freq_mask = np.any(np.all(Data.data.mask, axis=0), axis=1)
-        ax1.plot(np.logical_not(freq_mask[0, :]).astype('float')+4, label='cal on + off')
+        #freq_mask = np.any(np.all(Data.data.mask, axis=0), axis=1)
+        #ax1.plot(np.logical_not(freq_mask[0, :]).astype('float')+4, label='cal on + off')
 
-        plt.legend()
-        plt.show()
+        #plt.legend()
+        #plt.show()
 
-        exit()
+        #exit()
 
-        print freq_mask.shape
-        freq_mask = np.logical_not(freq_mask)
-        print freq_mask.shape
-        map_right = np.zeros(Data.data.shape)[:,0,0,:]
-        map_right[:, freq_mask[0, 0, 0, :]] = 1.
+        #print freq_mask.shape
+        #freq_mask = np.logical_not(freq_mask)
+        #print freq_mask.shape
+        #map_right = np.zeros(Data.data.shape)[:,0,0,:]
+        #map_right[:, freq_mask[0, 0, 0, :]] = 1.
 
-        freq_mask = np.logical_not(np.all(Data.data.mask, axis=0))
-        map_left  = np.zeros(Data.data.shape)[:,0,0,:]
-        map_left[:, freq_mask[0, 1, :]] = 1.
+        #freq_mask = np.logical_not(np.all(Data.data.mask, axis=0))
+        #map_left  = np.zeros(Data.data.shape)[:,0,0,:]
+        #map_left[:, freq_mask[0, 1, :]] = 1.
 
-        #map_left = Data.data[:,0,0,:]
-        #map_right = Data.data[:,0,1,:]
+        map_left = Data.data[:,0,0,:]
+        map_right = Data.data[:,0,1,:]
         #map_left = Data.data.mask[:,0,0,:]
         #map_right = Data.data.mask[:,0,1,:]
 
@@ -171,19 +171,19 @@ def check_map_fits(fits_filename):
 
         sigma = np.ma.std(map_left)
         mean = np.ma.mean(map_left)
-        vmax = mean + sigma
-        vmin = mean - sigma
-        #im1 = ax1.pcolormesh(X, Y, map_left, vmax=vmax, vmin=vmin)
+        vmax = mean + 3 * sigma
+        vmin = mean - 3 * sigma
+        im1 = ax1.pcolormesh(X, Y, map_left, vmax=vmax, vmin=vmin)
         #im1 = ax1.pcolormesh(X, Y, map_left)
-        im1 = ax1.pcolormesh(X, Y, map_left, vmax=1, vmin=0)
+        #im1 = ax1.pcolormesh(X, Y, map_left, vmax=1, vmin=0)
 
         sigma = np.ma.std(map_right)
         mean = np.ma.mean(map_right)
-        vmax = mean + sigma
-        vmin = mean - sigma
-        #im2 = ax2.pcolormesh(X, Y, map_right, vmax=vmax, vmin=vmin)
+        vmax = mean + 3 * sigma
+        vmin = mean - 3 * sigma
+        im2 = ax2.pcolormesh(X, Y, map_right, vmax=vmax, vmin=vmin)
         #im2 = ax2.pcolormesh(X, Y, map_right)
-        im2 = ax2.pcolormesh(X, Y, map_right, vmax=1, vmin=0)
+        #im2 = ax2.pcolormesh(X, Y, map_right, vmax=1, vmin=0)
 
         fig.colorbar(im1, ax=ax1, cax=cax1)
         fig.colorbar(im2, ax=ax2, cax=cax2)
@@ -426,7 +426,7 @@ if __name__=="__main__":
     #check_svd(output_path + data_name + '_svd_YY.hdf5')
     #check_map(output_path + data_name + '_svd_XX.hdf5')
     #check_map(output_path + data_name + '_svd_YY.hdf5')
-    #check_map_fits(output_path + data_name + '.fits')
-    check_spec_fits(output_path + data_name + '.fits')
+    check_map_fits(output_path + data_name + '.fits')
+    #check_spec_fits(output_path + data_name + '.fits')
 
 
