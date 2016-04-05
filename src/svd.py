@@ -302,12 +302,21 @@ def svd_spec_time(data, params, file_ind, freq=None, time=None):
 
 def corr_svd(data, params, file_ind, freq=None, time=None):
 
+    if not hasattr(data, 'mask'):
+        data = np.ma.array(data)
+        data[np.logical_not(np.isfinite(data))] = np.ma.masked
+
     data[..., :100] = np.ma.masked
     data[...,-100:] = np.ma.masked
     data[...,1640:1740] = np.ma.masked
     data[...,2066:2166] = np.ma.masked
 
     freq_mask = np.logical_not(np.any(np.all(data.mask, axis=0), axis=1))
+
+    if not np.any(freq_mask[::3,:]):
+        msg = ("WARNING: all freq channels are masked, no svd performed")
+        warnings.warn(msg)
+        return data
 
     weights = np.ma.ones(data.shape)
     weights[data.mask] = np.ma.masked
@@ -377,9 +386,9 @@ def corr_svd(data, params, file_ind, freq=None, time=None):
         utils.mkparents(f_name)
         check_svd(f_name, svd_result, freq_mask[0,:], freq)
         check_map(f_name, np.ma.array(data[:,0,:,:]), time, freq)
-        f_name = params['output_root'] + \
-                params['file_middles'][file_ind] + '_corr_XX.hdf5'
-        check_corr(f_name, corr, weight)
+        #f_name = params['output_root'] + \
+        #        params['file_middles'][file_ind] + '_corr_XX.hdf5'
+        #check_corr(f_name, corr, weight)
 
     del corr, weight, svd_result, map1, map2, outmap_left, outmap_right 
     gc.collect()
@@ -433,9 +442,9 @@ def corr_svd(data, params, file_ind, freq=None, time=None):
         utils.mkparents(f_name)
         check_svd(f_name, svd_result, freq_mask[3,:], freq)
         check_map(f_name, np.ma.array(data[:,3,:,:]), time, freq)
-        f_name = params['output_root'] + \
-                params['file_middles'][file_ind] + '_corr_XX.hdf5'
-        check_corr(f_name, corr, weight)
+        #f_name = params['output_root'] + \
+        #        params['file_middles'][file_ind] + '_corr_XX.hdf5'
+        #check_corr(f_name, corr, weight)
 
     del corr, weight, svd_result, map1, map2, outmap_left, outmap_right
     gc.collect()
