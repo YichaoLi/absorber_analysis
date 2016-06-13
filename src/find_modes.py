@@ -39,7 +39,7 @@ def freq_covariance(map1, map2, weight1, weight2, freq1, freq2, no_weight=False,
         print "No mask in covariance matrix"
     else:
         print "%f%% covariance matrix are masked"%(
-                float(np.ma.count_masked(quad_wprod))/quad_wprod.size % 100)
+                float(np.ma.count_masked(quad_wprod))/quad_wprod.size * 100)
 
     mask = (quad_weight < 1e-20)
 

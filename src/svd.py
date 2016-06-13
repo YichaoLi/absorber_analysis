@@ -105,19 +105,19 @@ class SVD_ForegroundClean(base_single.BaseSingle) :
             print 'Converted to units of noise cal temperture.'
 
         if params['cal_rm']:
-            cal_xx = np.mean(Data.data[:, 0, 0, :] - Data.data[:, 0, 1, :], axis=0)
-            cal_yy = np.mean(Data.data[:, 3, 0, :] - Data.data[:, 3, 1, :], axis=0)
-            if np.median(cal_xx) > 0:
+            cal_xx = np.ma.mean(Data.data[:, 0, 0, :]-Data.data[:, 0, 1, :], axis=0)
+            cal_yy = np.ma.mean(Data.data[:, 3, 0, :]-Data.data[:, 3, 1, :], axis=0)
+            if np.ma.median(cal_xx) > 0:
                 #print np.median(cal_xx) 
                 Data.data[:, 0, 0, :] -= cal_xx[None, :]
                 Data.data[:, 3, 0, :] -= cal_yy[None, :]
-                Data.data[:, 1, 0, :] -= np.sqrt(cal_xx*cal_yy)[None, :]
-                Data.data[:, 2, 0, :] -= np.sqrt(cal_xx*cal_yy)[None, :]
+                Data.data[:, 1, 0, :] -= np.ma.sqrt(cal_xx*cal_yy)[None, :]
+                Data.data[:, 2, 0, :] -= np.ma.sqrt(cal_xx*cal_yy)[None, :]
             else:
                 Data.data[:, 0, 1, :] -= cal_xx[None, :]
                 Data.data[:, 3, 1, :] -= cal_yy[None, :]
-                Data.data[:, 1, 1, :] -= np.sqrt(cal_xx*cal_yy)[None, :]
-                Data.data[:, 2, 1, :] -= np.sqrt(cal_xx*cal_yy)[None, :]
+                Data.data[:, 1, 1, :] -= np.ma.sqrt(cal_xx*cal_yy)[None, :]
+                Data.data[:, 2, 1, :] -= np.ma.sqrt(cal_xx*cal_yy)[None, :]
             Data.add_history('Remove noise cal signal.')
             print 'Remove noise cal signal.'
 
@@ -304,14 +304,40 @@ def corr_svd(data, params, file_ind, freq=None, time=None):
 
     if not hasattr(data, 'mask'):
         data = np.ma.array(data)
-        data[np.logical_not(np.isfinite(data))] = np.ma.masked
+    data.mask = np.logical_or(data.mask, np.logical_not(np.isfinite(data)))
+
+    if np.all(data.mask[:,::3,...]):
+        msg = ("WARNING: all data are masked, no svd performed")
+        warnings.warn(msg)
+        return data
+
+    # flag out the bad dots
+    #sigma = np.ma.var(data)
+    #mean = np.ma.mean(data)
+    #data.mask = np.logical_or(data.mask, data < mean - 5*sigma)
+    threshold = 4
+    bad_mask = np.any(data[:,::3,...] < threshold, axis=(1,2))
+    data.mask = np.logical_or(data.mask, bad_mask[:, None, None, :])
+
+    mask_perc = np.ma.count_masked(data[:,::3,...]) / float(data[:,::3,...].size)
+    if mask_perc > 0.8:
+        msg = ("WARNING: %f%% data are masked, no svd performed")%(mask_perc*100)
+        warnings.warn(msg)
+        return data
 
     data[..., :100] = np.ma.masked
     data[...,-100:] = np.ma.masked
     data[...,1640:1740] = np.ma.masked
     data[...,2066:2166] = np.ma.masked
 
-    freq_mask = np.logical_not(np.any(np.all(data.mask, axis=0), axis=1))
+    #freq_mask = np.logical_not(np.any(np.all(data.mask, axis=0), axis=1))
+    time_mask = np.logical_not(np.any(np.all(data.mask, axis=-1), axis=(1,2)))
+    freq_mask = np.logical_not(np.any(data.mask[time_mask,...], axis=(0,2)))
+    #data[:,0,:,np.logical_not(freq_mask[0,:])] = np.ma.masked
+    #data[:,1,:,np.logical_not(freq_mask[1,:])] = np.ma.masked
+    #data[:,2,:,np.logical_not(freq_mask[2,:])] = np.ma.masked
+    #data[:,3,:,np.logical_not(freq_mask[3,:])] = np.ma.masked
+    data.mask = np.logical_or(data.mask, np.logical_not(freq_mask[None, :, None, :]))
 
     if not np.any(freq_mask[::3,:]):
         msg = ("WARNING: all freq channels are masked, no svd performed")
@@ -386,6 +412,9 @@ def corr_svd(data, params, file_ind, freq=None, time=None):
         utils.mkparents(f_name)
         check_svd(f_name, svd_result, freq_mask[0,:], freq)
         check_map(f_name, np.ma.array(data[:,0,:,:]), time, freq)
+        f_name = params['output_root'] + \
+                params['file_middles'][file_ind] + '_spec_XX.hdf5'
+        check_spec(f_name, np.ma.array(data[:,0,:,:]), freq)
         #f_name = params['output_root'] + \
         #        params['file_middles'][file_ind] + '_corr_XX.hdf5'
         #check_corr(f_name, corr, weight)
@@ -442,6 +471,9 @@ def corr_svd(data, params, file_ind, freq=None, time=None):
         utils.mkparents(f_name)
         check_svd(f_name, svd_result, freq_mask[3,:], freq)
         check_map(f_name, np.ma.array(data[:,3,:,:]), time, freq)
+        f_name = params['output_root'] + \
+                params['file_middles'][file_ind] + '_spec_YY.hdf5'
+        check_spec(f_name, np.ma.array(data[:,3,:,:]), freq)
         #f_name = params['output_root'] + \
         #        params['file_middles'][file_ind] + '_corr_XX.hdf5'
         #check_corr(f_name, corr, weight)
@@ -730,6 +762,58 @@ def check_corr(svd_filename, corr, weight):
     plt.savefig(svd_filename.replace('hdf5', 'png'), format='png')
     plt.close()
 
+def check_spec(svd_filename, map=None, freq=None):
+
+    if map == None:
+        svd_file = h5py.File(svd_filename, 'r')
+        time = svd_file['time'].value
+        freq = svd_file['freq'].value / 1.e6
+        map = np.ma.array(svd_file['map_right'].value)
+
+    name = svd_filename.split('/')[-2] + ' ' + \
+            svd_filename.split('/')[-1].split('.')[0]
+
+    map_left  = map[:,0,:]
+    map_right = map[:,1,:]
+
+    fig = plt.figure(figsize=(10, 5))
+    ax1 = fig.add_axes([0.1, 0.52, 0.80, 0.38])
+    ax2 = fig.add_axes([0.1, 0.10, 0.80, 0.38])
+
+    #map_left = np.ma.array(map_left)
+    #map_left[np.logical_not(np.isfinite(map_left))] = np.ma.masked
+
+    #map_right = np.ma.array(map_right)
+    #map_right[np.logical_not(np.isfinite(map_right))] = np.ma.masked
+
+    ax1.plot(freq, np.mean(map_left, axis=0), 'r.-')
+    ax2.plot(freq, np.mean(map_right, axis=0), 'r.-')
+
+    ax1.set_title(name)
+    ax1.set_xlim(xmin=freq.min(), xmax=freq.max())
+    ax1.minorticks_on()
+    ax1.tick_params(length=4, width=1, direction='out')
+    ax1.tick_params(which='minor', length=2, width=1, direction='out')
+    #ax1.set_xlabel('[time]')
+    ax1.set_ylabel('Cal on', 
+            horizontalalignment='right', 
+            verticalalignment='center',
+            multialignment='center')
+    ax1.set_xticklabels([])
+
+    ax2.set_xlim(xmin=freq.min(), xmax=freq.max())
+    ax2.minorticks_on()
+    ax2.tick_params(length=4, width=1, direction='out')
+    ax2.tick_params(which='minor', length=2, width=1, direction='out')
+    #ax2.set_xlabel('Time + %f [s]'%time0)
+    ax2.set_xlabel('Frequency')
+    ax2.set_ylabel('Cal off',
+            horizontalalignment='right', 
+            verticalalignment='center',
+            multialignment='center')
+
+    plt.savefig(svd_filename.replace('hdf5', 'png'), format='png')
+    plt.close()
 
 def check_map(svd_filename, map=None, time=None, freq=None):
 
@@ -762,15 +846,15 @@ def check_map(svd_filename, map=None, time=None, freq=None):
     cax1 = fig.add_axes([0.91, 0.52, 0.01, 0.38])
     cax2 = fig.add_axes([0.91, 0.10, 0.01, 0.38])
 
-    map_left = np.ma.array(map_left)
-    map_left[np.logical_not(np.isfinite(map_left))] = np.ma.masked
+    #map_left = np.ma.array(map_left)
+    #map_left[np.logical_not(np.isfinite(map_left))] = np.ma.masked
     #map_left[1640:1740, :] = np.ma.masked
     #map_left[2066:2166, :] = np.ma.masked
 
     Y, X = np.meshgrid(freq, time)
 
-    map_right = np.ma.array(map_right)
-    map_right[np.logical_not(np.isfinite(map_right))] = np.ma.masked
+    #map_right = np.ma.array(map_right)
+    #map_right[np.logical_not(np.isfinite(map_right))] = np.ma.masked
 
     sigma = np.ma.std(map_left)
     mean = np.ma.mean(map_left)
